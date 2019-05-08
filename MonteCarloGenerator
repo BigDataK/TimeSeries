@@ -1,136 +1,121 @@
-# -*- coding: utf-8 -*-
 """
-Monte Carlo Generator 0.1
+Monte Carlo Generator 0.5
 for building time series with predictable cycles
-Created on Thu Apr  4 21:18:30 2019
+Created on Thu Apr 4 21:18:30 2019
 
 @author: Dylan
 """
+from datetime import datetime as dt
+from datetime import timedelta as td
+from random import randint as rd
+from random import random as rm
+from random import sample as rs
+import pandas as pd
+import numpy as np
+
 #########################################################################
 #########################################################################
 ## Base Class
 #########################################################################
 #########################################################################
 class MonteCarloCalendar():
-    def __init__(self, granularity, rolls=100, number_builds=100, filters=3, probability=0.1, start = None, end = None):
+    '''
+    Builds an environment for a calendar generator.
+    Imports datetime and calendar for use in the rest of the Class.
+    '''
+    def __init__(self, freq='H', start=dt.today(), end=dt.today()):
         '''
-        Builds an environment for a calendar generator. Does not build the generator.
-        Imports datetime and calendar for use in the rest of the Class.
+        freq: a pandas frequency string that is the lowest tick to be recorded in the data (e.g.
+        you may generate on second ticks, but collate on hour tick granularity), in milliseconds.
         Defines the ticks for the cycle - the smallest time unit is used for building the calendar.
-        granularity: a pandas frequency string that is the lowest tick to be recorded in the data (e.g. you may generate 
-        on second ticks, but collate on hour tick granularity), in milliseconds
-        rolls: number of rolls to add per cycle - this will be randomised from 1 to rolls where rolls is user-defined. This is the
-        number of "rolls" that will be added to each row of the dataframe per selection by randomised filter.
-        filters: maximum number of filters to apply to each slice of the dataframe, e.g. dayofmonth, hour, selections applied =2 filters.
-        probability: the probability that any one roll will "hit" - out of 1
-        start_datetime: a datetime object that is the start date for this calendar environment, defaults to datetime.today()
-        end_datetime: a datetime object that is the end date for this calendar environment, defaults to datetime.today()
-        read_csv parse_dates="columnname"
+        start: a datetime object that is the start date for this calendar environment, defaults to
+        datetime.today()
+        end: a datetime object that is the end date for this calendar environment, defaults to
+        datetime.today()
         '''
-        import pandas as pd
-        import numpy as np
-        from datetime import datetime as dt
-        from random import randint as rd
-        from random import random as rm
-        from random import sample as rs
-        
-        self.pd = pd
-        self.np = np
-        self.dt = dt
-        self.rd = rd
-        self.rs = rs
-        self.rm = rm
-        self.freq = granularity
-        self.prob = probability
-        self.rolls = rolls
-        self.filters = filters
-        self.builds = number_builds
-        
-        #verify and set start and end dates for the dataset
-        if start is not None:
-            self.start = start
-        else:
-            self.start = self.dt.today()
-            
-        if end is not None:
-            self.end = end
-        else:
-            self.end = self.dt.today()
-        
+
         # create the dataframe and make the index into a datetimeindex
-        self.df = self.pd.DataFrame() #build our dataframe
-        date_rng = self.pd.date_range(start=self.start, end=self.end, freq=self.freq) #create a datetime range that fits user expectations
-        self.df['datetime'] = self.pd.to_datetime(date_rng) #make it into a column to create the accurate number of rows
-        self.df = self.df.set_index('datetime') #set it to the index
-        
+        self.m_c_t_s = pd.DataFrame() #build our dataframe
+        date_rng = pd.date_range(start=start, end=end, freq=freq) #create a datetime range
+        self.m_c_t_s['datetime'] = pd.to_datetime(date_rng) #make it into a col of accurate # rows
+        self.m_c_t_s = self.m_c_t_s.set_index('datetime') #set it to the index
+
         #build other necessary columns for data analysis
-        self.df["Rolls"] = 0 #how many times the dice are rolled for this time index
-        self.df["Results"] = 0 #the actual results of the die rolls
-        self.df["Ideal"] = 0 #the idealised results of the die rolls (number of rolls x probability)
-        self.df["Week"] = 0 #events that are weekly
-        self.df["Month"] = 0 #events that are monthly
-        self.df["Quarter"] = 0 #events that are quarterly
-        self.df["Year"] = 0 #events that are yearly
-        
-        #define the periods, used to generate frequencies
-        self.timeperiods=[self.df.index.year,
-                          self.df.index.month,
-                          self.df.index.day,
-                          self.df.index.hour,
-                          #self.df.index.minute,
-                          #self.df.index.second,
-                          self.df.index.dayofyear,
-                          self.df.index.weekofyear,
-                          self.df.index.week,
-                          self.df.index.dayofweek,
-                          self.df.index.weekday,
-                          self.df.index.quarter]
-    
-    def engage(self):
-        for i in range(self.builds): self.build_cycle()
-        self.standard_cycle()
-    
-    def interval_builder(self, interval):
+        self.m_c_t_s["Rolls"] = 0 #how many times the dice are rolled for this time index
+        self.m_c_t_s["Results"] = 0 #the actual results of the die rolls
+        self.m_c_t_s["Ideal"] = 0 #the idealised results of the die rolls (# rolls x probability)
+        self.m_c_t_s["Week"] = 0 #events that are weekly
+        self.m_c_t_s["Month"] = 0 #events that are monthly
+        self.m_c_t_s["Quarter"] = 0 #events that are quarterly
+        self.m_c_t_s["Year"] = 0 #events that are yearly
+
+    def engage(self, rolls=100, number_builds=100, filters=3, probability=0.1):
+        '''
+        Builds the generator. Creates the data for the dataframe.
+        rolls: number of rolls to add per cycle - this will be randomised from 1 to rolls
+        where rolls is user-defined. This is the number of "rolls" that will be added to
+        each row of the dataframe per selection by randomised filter.
+        filters: maximum number of filters to apply to each slice of the dataframe,
+        e.g. dayofmonth, hour, selections applied =2 filters.
+        probability: the probability that any one roll will "hit" - out of 1
+        '''
+        for dummy_i in range(number_builds):
+            self.build_cycle(rolls, filters)
+        self.standard_cycle(probability)
+
+    @classmethod
+    def interval_builder(cls, interval):
         '''
         The interval is the maximum number of periods in the selected range
         This function generates a list of random numbers within this range
-        https://pandas-docs.github.io/pandas-docs-travis/reference/offset_frequency.html << base offsets on this
-        https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.tseries.offsets.DateOffset.html
-        https://pandas-docs.github.io/pandas-docs-travis/reference/api/pandas.tseries.frequencies.to_offset.html
         '''
-        num_select = self.rd(1,interval) #select how many day selections will be made
-        period_list = self.rs(range(interval), num_select)
-        return period_list    
+        num_select = rd(1, interval) #select how many day selections will be made
+        period_list = rs(range(interval), num_select)
+        return period_list
 
-    def build_cycle(self):
+    def build_cycle(self, rolls, filters):
         '''
         Apply the mathematical function to each datetimeindex selected by the mask
         '''
-        roll = self.rd(1,self.rolls)
-        filter_list = self.rs(self.timeperiods, self.rd(1,self.filters)) #apply a random number of filters to the index
-        final_boolean = self.np.full((len(self.df),), True, dtype=bool)
+        #define the periods, used to generate frequencies
+        timeperiods = [self.m_c_t_s.index.year,
+                       self.m_c_t_s.index.month,
+                       self.m_c_t_s.index.day,
+                       self.m_c_t_s.index.hour,
+                       #self.m_c_t_s.index.minute,
+                       #self.m_c_t_s.index.second,
+                       self.m_c_t_s.index.dayofyear,
+                       self.m_c_t_s.index.weekofyear,
+                       self.m_c_t_s.index.week,
+                       self.m_c_t_s.index.dayofweek,
+                       self.m_c_t_s.index.weekday,
+                       self.m_c_t_s.index.quarter]
+
+        roll = rd(1, rolls)
+        filter_list = rs(timeperiods, rd(1, filters)) #apply a random number of filters to the index
+        final_boolean = np.full((len(self.m_c_t_s),), True, dtype=bool)
 
         for i in filter_list:
             results = self.interval_builder(len(list(set(i))))
             boolean_filter = i.isin(results)
-            final_boolean = self.np.logical_and(boolean_filter, final_boolean)
-        self.df.loc[self.df.index[final_boolean], "Rolls"] += roll
-    
-    def standard_cycle(self):
+            final_boolean = np.logical_and(boolean_filter, final_boolean)
+        self.m_c_t_s.loc[self.m_c_t_s.index[final_boolean], "Rolls"] += roll
+
+    def standard_cycle(self, prob):
         '''
         Build a cycle based on standard periods
         '''
-        self.df["Results"] = self.df["Rolls"].apply(lambda x: self.result_roller(x))
-        self.df["Ideal"] = self.df["Rolls"] * self.prob
-    
-    def result_roller(self, rolls):
+        self.m_c_t_s["Results"] = self.m_c_t_s["Rolls"].apply(lambda x: self.result_roller(x, prob))
+        self.m_c_t_s["Ideal"] = self.m_c_t_s["Rolls"] * prob
+
+    @classmethod
+    def result_roller(cls, rolls, prob):
         '''
         Takes each interval and rolls the proverbial dice to see if it fires for every occurrence
         '''
         result = 0
-        for i in range(rolls):
-            rand = self.rm()
-            if rand <= self.prob:
+        for dummy_i in range(rolls):
+            rand = rm()
+            if rand <= prob:
                 result += 1
         return result
-
