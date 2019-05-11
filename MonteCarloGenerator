@@ -12,6 +12,7 @@ from random import random as rm
 from random import sample as rs
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 #########################################################################
 #########################################################################
@@ -40,16 +41,7 @@ class MonteCarloCalendar():
         self.m_c_t_s['datetime'] = pd.to_datetime(date_rng) #make it into a col of accurate # rows
         self.m_c_t_s = self.m_c_t_s.set_index('datetime') #set it to the index
 
-        #build other necessary columns for data analysis
-        self.m_c_t_s["Rolls"] = 0 #how many times the dice are rolled for this time index
-        self.m_c_t_s["Results"] = 0 #the actual results of the die rolls
-        self.m_c_t_s["Ideal"] = 0 #the idealised results of the die rolls (# rolls x probability)
-        self.m_c_t_s["Week"] = 0 #events that are weekly
-        self.m_c_t_s["Month"] = 0 #events that are monthly
-        self.m_c_t_s["Quarter"] = 0 #events that are quarterly
-        self.m_c_t_s["Year"] = 0 #events that are yearly
-
-    def engage(self, rolls=100, number_builds=100, filters=3, probability=0.1):
+    def engage(self, rolls=100, number_builds=100, filters=1, probability=0.1):
         '''
         Builds the generator. Creates the data for the dataframe.
         rolls: number of rolls to add per cycle - this will be randomised from 1 to rolls
@@ -60,7 +52,7 @@ class MonteCarloCalendar():
         probability: the probability that any one roll will "hit" - out of 1
         '''
         for dummy_i in range(number_builds):
-            self.build_cycle(rolls, filters)
+            self.build_cycle(rolls, filters) #filters set to one for now
         self.standard_cycle(probability)
 
     @classmethod
@@ -69,7 +61,7 @@ class MonteCarloCalendar():
         The interval is the maximum number of periods in the selected range
         This function generates a list of random numbers within this range
         '''
-        num_select = rd(1, interval) #select how many day selections will be made
+        num_select = rd(1, interval) #select how many period selections will be made
         period_list = rs(range(interval), num_select)
         return period_list
 
@@ -77,36 +69,53 @@ class MonteCarloCalendar():
         '''
         Apply the mathematical function to each datetimeindex selected by the mask
         '''
+        #years don't work as per the rest of the items, must find fist year in index
+        base_year = self.m_c_t_s.index
+        base_year = base_year.year[0]
+        
         #define the periods, used to generate frequencies
-        timeperiods = [self.m_c_t_s.index.year,
-                       self.m_c_t_s.index.month,
-                       self.m_c_t_s.index.day,
-                       self.m_c_t_s.index.hour,
+        timeperiods = {"Year" : self.m_c_t_s.index.year,
+                       "Month" : self.m_c_t_s.index.month,
+                       "Day" : self.m_c_t_s.index.day,
+                       "Hour" : self.m_c_t_s.index.hour,
                        #self.m_c_t_s.index.minute,
                        #self.m_c_t_s.index.second,
-                       self.m_c_t_s.index.dayofyear,
-                       self.m_c_t_s.index.weekofyear,
-                       self.m_c_t_s.index.week,
-                       self.m_c_t_s.index.dayofweek,
-                       self.m_c_t_s.index.weekday,
-                       self.m_c_t_s.index.quarter]
+                       "DayofYear" : self.m_c_t_s.index.dayofyear,
+                       "WeekofYear" : self.m_c_t_s.index.weekofyear,
+                       "DayofWeek" : self.m_c_t_s.index.dayofweek,
+                       "Quarter" : self.m_c_t_s.index.quarter}
 
         roll = rd(1, rolls)
-        filter_list = rs(timeperiods, rd(1, filters)) #apply a random number of filters to the index
+        filter_list = rs(timeperiods.keys(), rd(1, filters)) #apply a random number of filters to the index
         final_boolean = np.full((len(self.m_c_t_s),), True, dtype=bool)
 
         for i in filter_list:
-            results = self.interval_builder(len(list(set(i))))
-            boolean_filter = i.isin(results)
+            results = self.interval_builder(len(list(set(timeperiods[i]))))
+            if i == "Year":#fix the year issue
+                results = [s + year for s in results]
+            boolean_filter = timeperiods[i].isin(results)
             final_boolean = np.logical_and(boolean_filter, final_boolean)
-        self.m_c_t_s.loc[self.m_c_t_s.index[final_boolean], "Rolls"] += roll
+            if i not in list(self.m_c_t_s):
+                self.m_c_t_s[i] = 0
+        
+        self.m_c_t_s.loc[self.m_c_t_s.index[final_boolean], filter_list[0]] += roll
 
     def standard_cycle(self, prob):
         '''
         Build a cycle based on standard periods
         '''
-        self.m_c_t_s["Results"] = self.m_c_t_s["Rolls"].apply(lambda x: self.result_roller(x, prob))
-        self.m_c_t_s["Ideal"] = self.m_c_t_s["Rolls"] * prob
+        columns = list(self.m_c_t_s)
+        self.m_c_t_s["Total"] = self.m_c_t_s.sum(axis = 1) #exclude the Total column from the process below
+        
+        for i in columns:
+            self.m_c_t_s[i + "_Results"] = self.m_c_t_s[i].apply(lambda x: self.result_roller(x, prob))
+            self.m_c_t_s[i + "_Ideal"] = self.m_c_t_s[i] * prob
+
+        all_results = [s for s in list(self.m_c_t_s) if "_Results" in s]
+        all_ideal = [s for s in list(self.m_c_t_s) if "_Ideal" in s]
+    
+        self.m_c_t_s["Total_Results"] = self.m_c_t_s[all_results].sum(axis = 1)
+        self.m_c_t_s["Total_Ideal"] = self.m_c_t_s[all_ideal].sum(axis = 1)
 
     @classmethod
     def result_roller(cls, rolls, prob):
@@ -119,3 +128,12 @@ class MonteCarloCalendar():
             if rand <= prob:
                 result += 1
         return result
+    
+    def result_plot(self):
+        columns = list(self.m_c_t_s)
+        all_results = [s for s in columns if "_Results" in s]
+        all_ideal = [s for s in columns if "_Ideal" in s]
+        result_df = self.m_c_t_s[all_results]
+        ideal_df = self.m_c_t_s[all_ideal]
+        result_df.plot.area()
+        ideal_df.plot.area()
