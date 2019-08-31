@@ -12,7 +12,7 @@ from random import random as rm
 from random import sample as rs
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+from operator import add
 
 #########################################################################
 #########################################################################
@@ -24,7 +24,7 @@ class MonteCarloCalendar():
     Builds an environment for a calendar generator.
     Imports datetime and calendar for use in the rest of the Class.
     '''
-    def __init__(self, freq='H', start=dt.today(), end=dt.today()):
+    def __init__(self, freq=td(days=1), start=dt.today(), end=dt.today(), rolls=50, number_builds=50, filters=1, probability=0.1):
         '''
         freq: a pandas frequency string that is the lowest tick to be recorded in the data (e.g.
         you may generate on second ticks, but collate on hour tick granularity), in milliseconds.
@@ -34,14 +34,26 @@ class MonteCarloCalendar():
         end: a datetime object that is the end date for this calendar environment, defaults to
         datetime.today()
         '''
-
+        #I need this later
+        self.freq = freq
+        
+        # let's just define the y cycles now as a global because I'm lazy
+        self.y = {}
+        
         # create the dataframe and make the index into a datetimeindex
-        self.m_c_t_s = pd.DataFrame() #build our dataframe
-        date_rng = pd.date_range(start=start, end=end, freq=freq) #create a datetime range
-        self.m_c_t_s['datetime'] = pd.to_datetime(date_rng) #make it into a col of accurate # rows
-        self.m_c_t_s = self.m_c_t_s.set_index('datetime') #set it to the index
-
-    def engage(self, rolls=100, number_builds=100, filters=1, probability=0.1):
+        origin = self.create_origin(start, end)
+        origin = self.engage(origin, rolls, number_builds, filters, probability)
+        self.m_c_t_s = origin.copy()
+        self.standard_cycle(probability, origin)
+    
+    def create_origin(self, start, end):
+        origin = pd.DataFrame() #build our dataframe
+        date_rng = pd.date_range(start=start, end=end, freq= self.freq) #create a datetime range
+        origin['datetime'] = pd.to_datetime(date_rng) #make it into a col of accurate # rows
+        origin = origin.set_index('datetime') #set it to the index
+        return origin
+        
+    def engage(self, origin, rolls, number_builds, filters, probability):
         '''
         Builds the generator. Creates the data for the dataframe.
         rolls: number of rolls to add per cycle - this will be randomised from 1 to rolls
@@ -52,8 +64,10 @@ class MonteCarloCalendar():
         probability: the probability that any one roll will "hit" - out of 1
         '''
         for dummy_i in range(number_builds):
-            self.build_cycle(rolls, filters) #filters set to one for now
-        self.standard_cycle(probability)
+            origin = self.build_cycle(rolls, filters, origin) #filters set to one for now
+        if "Trend" in origin:
+            origin['Trend'] = origin['Trend'].sort_values(ascending=True).values
+        return origin
 
     @classmethod
     def interval_builder(cls, interval):
@@ -64,59 +78,82 @@ class MonteCarloCalendar():
         num_select = rd(1, interval) #select how many period selections will be made
         period_list = rs(range(interval), num_select)
         return period_list
+    
+    def calculate_timeperiods(self, origin):
+        timeperiods = {"Year" : origin.index.year,
+                       "Quarter" : origin.index.quarter,
+                       "Month" : origin.index.month,
+                       "DayofMonth" : origin.index.day,
+                       "DayofYear" : origin.index.dayofyear,
+                       "WeekofYear" : origin.index.weekofyear,
+                       "DayofWeek" : origin.index.dayofweek
+                       }
+        smallperiods = {"Hour" : origin.index.hour,
+               "Minute" : origin.index.minute,
+               "Second" : origin.index.second,
+               "Microsecond" : origin.index.microsecond,
+               "Nanosecond" : origin.index.nanosecond
+               }
+        for key, value in smallperiods.items():
+            time_string = str(1) + " " + key + "s"
+            time_string = pd.to_timedelta(time_string.lower())
+            if time_string >= self.freq:
+                timeperiods[key] = value
+        return timeperiods
 
-    def build_cycle(self, rolls, filters):
+    def build_cycle(self, rolls, filters, origin):
         '''
         Apply the mathematical function to each datetimeindex selected by the mask
         '''
         #years don't work as per the rest of the items, must find fist year in index
-        base_year = self.m_c_t_s.index
+        base_year = origin.index
         base_year = base_year.year[0]
         
         #define the periods, used to generate frequencies
-        timeperiods = {"Year" : self.m_c_t_s.index.year,
-                       "Month" : self.m_c_t_s.index.month,
-                       "Day" : self.m_c_t_s.index.day,
-                       "Hour" : self.m_c_t_s.index.hour,
-                       #self.m_c_t_s.index.minute,
-                       #self.m_c_t_s.index.second,
-                       "DayofYear" : self.m_c_t_s.index.dayofyear,
-                       "WeekofYear" : self.m_c_t_s.index.weekofyear,
-                       "DayofWeek" : self.m_c_t_s.index.dayofweek,
-                       "Quarter" : self.m_c_t_s.index.quarter}
+        timeperiods = self.calculate_timeperiods(origin.copy())
 
         roll = rd(1, rolls)
         filter_list = rs(timeperiods.keys(), rd(1, filters)) #apply a random number of filters to the index
-        final_boolean = np.full((len(self.m_c_t_s),), True, dtype=bool)
+        final_boolean = np.full((len(origin),), True, dtype=bool)
 
         for i in filter_list:
-            results = self.interval_builder(len(list(set(timeperiods[i]))))
+            #building the time series list
+            result_range = len(list(set(timeperiods[i])))
+            results = self.interval_builder(result_range)
+            results_raw = results
             if i == "Year":#fix the year issue
-                results = [s + year for s in results]
+                results = [s + base_year for s in results]
+            if i in ["Quarter", "Month", "WeekofYear", "DayofYear"]:#fix the zero-index issue
+                results = [s + 1 for s in results]
             boolean_filter = timeperiods[i].isin(results)
             final_boolean = np.logical_and(boolean_filter, final_boolean)
-            if i not in list(self.m_c_t_s):
-                self.m_c_t_s[i] = 0
+            if i not in list(origin):
+                origin[i] = 0
+            
+            #building the y target cycles
+            result_list = [0] * result_range
+            for j in results_raw:
+                result_list[j] = roll
+            previous_list = self.y.get(i, [0] * result_range)
+            self.y[i] = list(map(add, previous_list, result_list))
         
-        self.m_c_t_s.loc[self.m_c_t_s.index[final_boolean], filter_list[0]] += roll
+        origin.loc[origin.index[final_boolean], filter_list[0]] += roll
+        return origin
 
-    def standard_cycle(self, prob):
+    def standard_cycle(self, prob, origin):
         '''
         Build a cycle based on standard periods
         '''
-        columns = list(self.m_c_t_s)
-        self.m_c_t_s["Total"] = self.m_c_t_s.sum(axis = 1) #exclude the Total column from the process below
+        columns = list(origin)
+        result = origin.copy()
+        ideal = origin.copy()
         
         for i in columns:
-            self.m_c_t_s[i + "_Results"] = self.m_c_t_s[i].apply(lambda x: self.result_roller(x, prob))
-            self.m_c_t_s[i + "_Ideal"] = self.m_c_t_s[i] * prob
-
-        all_results = [s for s in list(self.m_c_t_s) if "_Results" in s]
-        all_ideal = [s for s in list(self.m_c_t_s) if "_Ideal" in s]
-    
-        self.m_c_t_s["Total_Results"] = self.m_c_t_s[all_results].sum(axis = 1)
-        self.m_c_t_s["Total_Ideal"] = self.m_c_t_s[all_ideal].sum(axis = 1)
-
+            result[i] = result[i].apply(lambda x: self.result_roller(x, prob))
+            ideal[i] = ideal[i] * prob
+        
+#        self.result_plot(result, ideal)
+       
     @classmethod
     def result_roller(cls, rolls, prob):
         '''
@@ -129,11 +166,45 @@ class MonteCarloCalendar():
                 result += 1
         return result
     
-    def result_plot(self):
-        columns = list(self.m_c_t_s)
-        all_results = [s for s in columns if "_Results" in s]
-        all_ideal = [s for s in columns if "_Ideal" in s]
-        result_df = self.m_c_t_s[all_results]
-        ideal_df = self.m_c_t_s[all_ideal]
-        result_df.plot.area()
-        ideal_df.plot.area()
+    def result_plot(self, results, ideals):
+        """
+        Plots the ideal and an example result plot for show. Not otherwise useful.
+        """
+#        results.plot.area()
+#        results.plot.line()
+#        results.plot.bar()
+        ideals.plot.area()
+        for key, value in self.y.items():
+            temp_df = pd.DataFrame({key: value})
+            temp_df.plot.area()
+        
+    def output_results(self, prob, iterations):
+        """
+        The meat of the program.
+        Outputs any number of results (X) in csv format as well as the (y) targets
+        for each cycle. Puts them into a single folder so that the correct X and y
+        will be matched and processed.
+        """     
+        #set counter for files
+        s = 0
+        
+        #set origin df
+        origin = self.m_c_t_s.copy()
+        columns = list(origin)
+        output = {}
+        
+        for key, value in self.y.items():
+            output["data_y_" + key] = np.array(value)*prob
+        
+        output["ideal_x"] = origin.copy() * prob
+        
+        for dummy_i in range(iterations):
+            temp = origin.copy()
+            name = "data_X_" + str(s) 
+
+            for j in columns:
+                temp[j] = origin[j].apply(lambda x: self.result_roller(x, prob))
+            
+            output[name] = temp
+            s += 1
+        return output
