@@ -1,0 +1,71 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon May 20 09:28:35 2019
+
+@author: Dylan
+"""
+import pandas as pd
+import numpy as np
+
+class ConstructionTools():
+    """
+    The first step for the CNN is convolution
+    This class will accept a 1d time series (timeindex:value) and convert it to
+    a 2d sparse-ish matrix in order to perform convolution.
+    """
+    def __init__(self):
+        """
+        This is just a toolkit for fixing time series data from the Monte Carlo Generator
+        """
+        print("You dare invoke me?")
+        
+    def HypotheticalCycleCalculator(self, time_series):
+        """
+        Sum the values of all days and divide by the total
+        Wow it worked
+        So this makes a list of means of all values in that unit of that timespan.
+        Like in each day of the week, or each day of the month.
+        """
+        timeperiods = {"Year" : time_series.copy().index.year,
+                    "Quarter" : time_series.copy().index.quarter,
+                    "Month" : time_series.copy().index.month,
+                    "DayofMonth" : time_series.copy().index.day,
+                    "DayofYear" : time_series.copy().index.dayofyear,
+                    "WeekofYear" : time_series.copy().index.weekofyear,
+                    "DayofWeek" : time_series.copy().index.weekday
+                    }
+        
+        hypothetical_cycles = {}
+        minmax = []
+        minmax = np.array(minmax)
+        
+        for key, val in timeperiods.items():
+            result = time_series.groupby(by=val).mean()
+            hypothetical_cycles[key] = np.array(result.values)
+            minmax = np.append(minmax, result)
+        hypothetical_cycles["Original"] = time_series.values
+        minmax = np.append(minmax, time_series.values)
+        min_val = minmax.min()
+        max_val = minmax.max()
+        for key, val in hypothetical_cycles.items():
+            hypothetical_cycles[key] = self.normalise(hypothetical_cycles[key], max_val, min_val)
+        return hypothetical_cycles
+    
+    @classmethod
+    def TargetCalculator(cls, actual_cycles, hypothetical_cycles):
+        target_cycles = {}
+        for key in actual_cycles.keys():
+            actual_cycle = actual_cycles[key]
+            hypothetical_cycle = hypothetical_cycles[key]
+            assert len(actual_cycle) == len(hypothetical_cycle), "The cycle lengths are unequal"
+            target_cycles[key] = np.array(actual_cycle)
+            for idx, val in enumerate(actual_cycle):
+                target_cycles[key][idx] = val/hypothetical_cycle[idx]
+        return target_cycles
+    
+    @classmethod
+    def normalise(cls, vector, max_val, min_val):
+        assert min_val >= 0, "Min value appears to be incorrect " + min_val
+        assert max_val > min_val, "Max value appears to be incorrect " + max_val
+        return np.divide(np.subtract(vector, min_val),(max_val - min_val))
+
