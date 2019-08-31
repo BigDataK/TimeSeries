@@ -191,13 +191,19 @@ class MonteCarloCalendar():
         #set origin df
         origin = self.m_c_t_s.copy()
         columns = list(origin)
-        output = {}
+        output_X = {}
+        output_y = {}
         
+        #produces the Actual Cycles for all time series
         for key, value in self.y.items():
-            output["data_y_" + key] = np.array(value)*prob
+            output_y[key] = np.array(value)*prob
         
-        output["ideal_x"] = origin.copy() * prob
+        #produces the ideal X given the probability assigned to the Monte Carlo function
+        output_X["ideal_x"] = origin.copy() * prob
         
+        #the time series to be fed into the Dataset constructor, all of this data can be used
+        #with the same Actual Cycles - meaning multiple datasets can be created for use with 
+        #the same data_y_ cycles.
         for dummy_i in range(iterations):
             temp = origin.copy()
             name = "data_X_" + str(s) 
@@ -205,6 +211,7 @@ class MonteCarloCalendar():
             for j in columns:
                 temp[j] = origin[j].apply(lambda x: self.result_roller(x, prob))
             
-            output[name] = temp
+            temp = temp.sum(axis=1)
+            output_X[name] = temp
             s += 1
-        return output
+        return (output_X, output_y)
