@@ -6,6 +6,8 @@ Created on Mon May 20 09:28:35 2019
 """
 import pandas as pd
 import numpy as np
+import math
+from sklearn.preprocessing import normalize as norm
 
 class ConstructionTools():
     """
@@ -35,21 +37,20 @@ class ConstructionTools():
                     "DayofWeek" : time_series.copy().index.weekday
                     }
         
+        hypothetical_cycles_array = time_series.values
         hypothetical_cycles = {}
-        minmax = []
-        minmax = np.array(minmax)
+        length = len(hypothetical_cycles_array)
         
         for key, val in timeperiods.items():
-            result = time_series.groupby(by=val).mean()
-            hypothetical_cycles[key] = np.array(result.values)
-            minmax = np.append(minmax, result)
-        hypothetical_cycles["Original"] = time_series.values
-        minmax = np.append(minmax, time_series.values)
-        min_val = minmax.min()
-        max_val = minmax.max()
-        for key, val in hypothetical_cycles.items():
-            hypothetical_cycles[key] = self.normalise(hypothetical_cycles[key], max_val, min_val)
-        return hypothetical_cycles
+            result = time_series.groupby(val)[0].transform('mean')
+            hypothetical_cycles_array = np.append(hypothetical_cycles_array, result)
+            hypothetical_cycles[key] = time_series.groupby(val).mean().values
+        hypothetical_cycles_array = hypothetical_cycles_array.reshape(1,len(hypothetical_cycles_array))
+        hypothetical_cycles_array = norm(hypothetical_cycles_array, norm='max')
+        rows = int(len(hypothetical_cycles_array[0])/length)
+        hypothetical_cycles_array = hypothetical_cycles_array.reshape(rows,length)
+
+        return (hypothetical_cycles_array,hypothetical_cycles)
     
     @classmethod
     def TargetCalculator(cls, actual_cycles, hypothetical_cycles):
@@ -62,10 +63,3 @@ class ConstructionTools():
             for idx, val in enumerate(actual_cycle):
                 target_cycles[key][idx] = val/hypothetical_cycle[idx]
         return target_cycles
-    
-    @classmethod
-    def normalise(cls, vector, max_val, min_val):
-        assert min_val >= 0, "Min value appears to be incorrect " + min_val
-        assert max_val > min_val, "Max value appears to be incorrect " + max_val
-        return np.divide(np.subtract(vector, min_val),(max_val - min_val))
-
