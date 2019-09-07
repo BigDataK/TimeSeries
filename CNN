@@ -1,0 +1,90 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Jun 16 10:30:04 2019
+
+@author: Dylan
+"""
+
+from MonCarGen import MonteCarloCalendar as mcg
+from datetime import datetime as dt
+from datetime import timedelta as td
+from builtins import range
+from ConstTools import ConstructionTools as ct
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+from datetime import datetime
+#from scipy.io import loadmat
+#from sklearn.utils import shuffle
+
+################################################# Setting up the basic parameters
+################################################# of the datetime granularity
+#Sing in me, muse, and through me tell the story# of the Monte Carlo Engine
+################################################# These variables are fed into
+################################################# the MCE in build_data()
+granularity = td(days=1, 
+                 seconds=0, 
+                 microseconds=0, 
+                 milliseconds=0, 
+                 minutes=0, 
+                 hours=0, 
+                 weeks=0) #granularity must be built as datetime, here is days
+
+start_date = dt(dt.today().year, 
+                dt.today().month, 
+                dt.today().day) #just in case you want to define it
+
+end_date = start_date + td(days=1825) #arbitrary date 5 years into the future
+
+construct = ct() #build the construction tools variable
+
+################################################# 
+################################################# 
+# of that man skilled in all ways of contending # 
+################################################# 
+################################################# 
+def build_data(n):
+    """
+    This builds time series. It produces a tuple of x and y data (0 is X, 
+    1 is y, and 2 is the X_ideal: the exact values of X if they had perfect 
+    probability).
+    Variable n = the number of X samples that have the same y.
+    """
+    monte_carlo = mcg(freq = granularity, 
+                      start = start_date, 
+                      end = end_date) #feeds in the above variables
+    
+    sample = monte_carlo.output_results(0.1, n) #where n is the number of X
+    return sample #returns a tuple (X, y) where there can be multiple X per y
+
+#################################################  
+#################################################
+#### the wanderer, harried for years on end  #### 
+################################################# 
+#################################################
+def DatasetConstructor(n):
+    """
+    This is section 3.4 of the finished project, and produces a TensorFlow
+    X and y Dataset that can be fed into a CNN.
+    """
+    precursor_data = []
+    for i in range(n):
+        X_and_y_base = build_data(4)
+        X_data = X_and_y_base[0] #this is a dict of X data matrices
+        y_data = X_and_y_base[1] #this is a dict of numpy arrays
+        for key, val in X_data.items():
+            X_y_converted = construct.HypotheticalCycleCalculator(val)
+            X_normal = X_y_converted[0]
+            y_target = construct.TargetCalculator(y_data,X_y_converted[1])
+            precursor_data.append((X_normal, y_target, X_y_converted[2]))
+    return(precursor_data)
+
+#################################################  
+#################################################
+###### after he plundered the stronghold  ####### 
+################################################# 
+#################################################
+
+jim = DatasetConstructor(2)
